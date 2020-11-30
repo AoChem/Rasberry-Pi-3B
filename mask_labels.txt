@@ -1,0 +1,2 @@
+0 "Dangerous! No Mask!"
+1 "Safe!"
