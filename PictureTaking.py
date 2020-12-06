@@ -2,39 +2,61 @@
 
 # Create buttons for collecting photos of different status
 # package info: https://www.raspberrypi.org/blog/gpio-zero-a-friendly-python-api-for-physical-computing/
-from gpiozero import Button 
-# Use picamera library to control the camera module of Raspi
-from picamera import PiCamera
-# gmtime: return the time info
-# strftime: accept the time info returned by gmtime
-from time import gmtime, strftime
+	
+def picture_taking(NumOfSts, NameOfSts):
 
-# u: unassembled status
-def take_picture_u():
-	print("Unassembled Status Picture Taking!")
-	output = strftime("/home/pi/AoChenST/StsClsf/images/unassembled/image-%d-%m-%H:%M:%S.png", gmtime())
-	camera.capture(output)
-# a: asse,bled status
-def take_picture_a():
-	print("Assembled Status Picture Taking!")
-	output = strftime("/home/pi/AoChenST/StsClsf/images/assembled/image-%d-%m-%H:%M:%S.png", gmtime())
-	camera.capture(output)
+	from gpiozero import Button 
+	# Use picamera library to control the camera module of Raspi
+	from picamera import PiCamera
+	# gmtime: return the time info
+	# strftime: accept the time info returned by gmtime
+	from time import gmtime, strftime
+	import os
 
-assembled_pic_btn = Button(14)
-unassembled_pic_btn = Button(15)
+	for x in range(NumOfSts):
+		if not os.path.exists('/home/pi/AoChenST/StsClsf/images/'\
+			+NameOfSts[x]+'/'):
+			os.makedirs('/home/pi/AoChenST/StsClsf/images/'\
+				+NameOfSts[x]+'/')
 
-camera = PiCamera()
-camera.resolution = (800, 480)
+	# 1st Status
+	def take_picture_1():
+		print("1st Status Picture Taking!")
+				output = strftime("/home/pi/AoChenST/StsClsf/images/"\
+			+NameOfSts[1]+"/image-%d-%m-%H:%M:%S.png", gmtime())
+		camera.capture(output)
+	# 2nd Status
+	def take_picture_2():
+		print("2nd Status Picture Taking!")
+		output = strftime("/home/pi/AoChenST/StsClsf/images/"\
+			+NameOfSts[2]+"/image-%d-%m-%H:%M:%S.png", gmtime())
+		camera.capture(output)
+	# 3rd Status
+	def take_picture_3():
+		print("3rd Status Picture Taking!")
+		output = strftime("/home/pi/AoChenST/StsClsf/images/"\
+			+NameOfSts[3]+"/image-%d-%m-%H:%M:%S.png", gmtime())
+		camera.capture(output)
 
-print("Start Status Classification!")
-camera.start_preview()
+	PicBtn1 = Button(14)
+	PicBtn2 = Button(15)
+	# PicBtn3 = 0
 
-try:
-	while True:
-		assembled_pic_btn.when_pressed = take_picture_a
-		unassembled_pic_btn.when_pressed = take_picture_u
-except KeyboardInterrupt:
-	pass
+	camera = PiCamera()
+	camera.resolution = (800, 480)
 
-camera.stop_preview()
-print("\n Stop Status Classification!")
+	print("Start Taking Pictures!\n")
+	print("Use Ctrl+C to Quit!\n")
+
+	camera.start_preview()
+
+	try:
+		while True:
+			PicBtn1.when_pressed = take_picture_1()
+			PicBtn2.when_pressed = take_picture_2()
+			# PicBtn3.when_pressed = take_picture_3()
+	except KeyboardInterrupt:
+		pass
+
+	camera.stop_preview()
+	print("Stop Taking Pictures!\n")
