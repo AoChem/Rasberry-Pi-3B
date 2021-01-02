@@ -6,14 +6,12 @@ from tkinter import filedialog
 import os
 import time
 import keyboard
-import numpy as np
-import csv
-from picamera import PiCamera
 from time import gmtime, strftime
+from picamera import PiCamera
 
 from google.cloud import storage
 from google.cloud import automl
-from google.cloud.storage import Blob
+
 
 def initialization():
 	global NameOfSts
@@ -44,7 +42,7 @@ def picture_taking():
 		camera.stop_preview()
 		camera.close()
 		pt.destroy()
-	# 1st StatusPi
+	# 1st Status
 	def take_picture_1():
 		print("1st Status Picture Taken!")
 		output = output_directory+'/'+strftime(NameOfSts[0]+"/image-%d-%m-%H:%M:%S.png", gmtime())
@@ -77,11 +75,11 @@ def picture_taking():
 			os.makedirs(output_directory+'/'+NameOfSts[x]+'/')
 
 	if NumOfSts >= 1:
-		sts1_button = Button(pt, text=NameOfSts[0], width=25, command=take_picture_1).pack()
+		sts1_button = Button(pt, text='State 1', width=25, command=take_picture_1).pack()
 		if NumOfSts >= 2:
-			sts2_button = Button(pt, text=NameOfSts[1], width=25, command=take_picture_2).pack()
+			sts2_button = Button(pt, text='State 2', width=25, command=take_picture_2).pack()
 			if NumOfSts == 3:
-				sts3_button = Button(pt, text=NameOfSts[2], width=25, command=take_picture_3).pack()
+				sts3_button = Button(pt, text='State 3', width=25, command=take_picture_3).pack()
 
 	finish_button = Button(pt, text='Finish', width=25, command=finish).pack()
 
@@ -95,15 +93,14 @@ def dataset_importing():
 		destination_path = filedialog.askdirectory(parent=p, initialdir=os.getcwd(),
 			title="Please select the folder you want to import:")
 		shutil.copytree(src=source_dataset_path, dst=destination_path, dirs_exist_ok=True) 
-		# dirs_exist_ok can only be used in Python 3.8+, however I falied to install grpcio under python3.8
+		# dirs_exist_ok can only be Wused in Python 3.8+, however I falied to install grpcio under python3.8
 
 def data_augmentation():
 	import Augmentor
 
 	def data_augmenting():
 		for x in range(NumOfSts):
-			NumOfSmp = simpledialog.askinteger("Data Augmenting",
-				"Input the number of samples:",
+			NumOfSmp = simpledialog.askinteger("Data Augmenting", "Input the number of samples:",
 				parent=da, minvalue=50, maxvalue=500)
 			
 			SrcPath = filedialog.askdirectory(parent=da,
@@ -130,20 +127,15 @@ def data_augmentation():
 				output_directory=DstPath)
 
 			if var1.get() == 1:
-				pl.rotate(probability=0.8,
-					max_left_rotation=10,
+				pl.rotate(probability=0.5, max_left_rotation=10, \
 					max_right_rotation=10)
 			if var2.get() == 1:
-				pl.skew(probability=0.8,
-					magnitude=0.2)
+				pl.skew_tilt(probability=0.2, magnitude=0.1)
 			if var3.get() == 1:
-				pl.zoom(probability=0.8,
-					min_factor=1.1,
-					max_factor=1.5)
+				pl.random_erasing(probability=0.2, rectangle_area=0.2)
 			if var4.get() == 1:
-				pl.random_brightness(probability=0.8,
-					min_factor=0.8,
-					max_factor=1.2)
+				pl.random_brightness(probability=0.2, min_factor=0.8, \
+					max_factor=0.9)
 			
 			pl.sample(NumOfSmp)
 
@@ -166,6 +158,7 @@ def data_augmentation():
 
 def model_training_main():
 	def model_training_init(parent):
+		# why run before clicking??????
 		mt = parent
 		global display_name, model_name, model_filename, csv_name
 		display_name = simpledialog.askstring("Initializing", "Dataset Name:", parent=mt)
@@ -287,9 +280,6 @@ def model_training_main():
 		export_metadata = response.metadata
 		export_directory = export_metadata.export_model_details.output_info.gcs_output_directory
 
-		client1 = storage.Client(project=project_id)
-		bucket1 = client1.get_bucket(bucket_name)
-
 		model_dir_remote = export_directory + remote_model_filename
 		model_dir_remote = "/".join(model_dir_remote.split("/")[-4:])
 		model_dir = os.path.join("models", model_filename) 
@@ -297,10 +287,8 @@ def model_training_main():
 		print(model_dir)
 
 		# wait for model to be exported
-		blob = Blob(model_dir_remote, bucket1)
-
-		with open(model_dir, "wb") as file_obj:
-			blob.download_to_file(file_obj)
+		blob1 = bucket.blob(model_dir_remote)
+		blob1.download_to_filename(model_dir)
 
 		print("Process completed, new model is now accessible locally.")
 
@@ -316,60 +304,6 @@ def model_training_main():
 	exit_button = Button(mt, text='Exit', command=mt.destroy).pack()
 
 	mt.mainloop()
-
-def supplement():
-	camera = PiCamera()
-	camera.resolution = (800, 480)
-	camera.start_preview(fullscreen=False, window=(100, 200, 800, 480))
-
-	taking_pictures=True
-
-	def finish():
-		camera.stop_preview()
-		camera.close()
-		sp.destroy()
-	# 1st StatusPi
-	def take_picture_1():
-		print("1st Status Picture Taken!")
-		output = output_directory+'/'+strftime(NameOfSts[0]+"/image-%d-%m-%H:%M:%S.png", gmtime())
-		camera.capture(output)
-	# 2nd Status
-	def take_picture_2():
-		print("2nd Status Picture Taken!")
-		output = output_directory+'/'+strftime(NameOfSts[1]+"/image-%d-%m-%H:%M:%S.png", gmtime())
-		camera.capture(output)
-	# 3rd Status
-	def take_picture_3():
-		print("3rd Status Picture Taken!")
-		output = output_directory+'/'+strftime(NameOfSts[2]+"/image-%d-%m-%H:%M:%S.png", gmtime())
-		camera.capture(output)
-
-	sp = Toplevel()
-	sp.title('Supplementary Picture Taking')
-
-	output_directory = filedialog.askdirectory(parent=sp,
-		initialdir=os.getcwd(),
-		title = "Please select the destination folder:")
-
-	if output_directory == "":
-		messagebox.showwarning("Warning", "Empty Path!")
-		time.sleep(1)
-		output_directory = filedialog.askdirectory()
-
-	for x in range(NumOfSts):
-		if not os.path.exists(output_directory+'/'+NameOfSts[x]+'/'):
-			os.makedirs(output_directory+'/'+NameOfSts[x]+'/')
-
-	if NumOfSts >= 1:
-		sts1_button = Button(sp, text='State 1', width=25, command=take_picture_1).pack()
-		if NumOfSts >= 2:
-			sts2_button = Button(sp, text='State 2', width=25, command=take_picture_2).pack()
-			if NumOfSts == 3:
-				sts3_button = Button(sp, text='State 3', width=25, command=take_picture_3).pack()
-
-	Button(sp, text='Finish', width=25, command=finish).pack()
-
-	sp.mainloop()
 
 def prediction_making():
 	from edgetpu.classification.engine import ClassificationEngine
@@ -401,7 +335,7 @@ def prediction_making():
 	# initialize the video stream and allow the camera sensor to warmup
 	print("[INFO] starting video stream...")
 	vs = VideoStream(src=0).start()
-	# vs = VideoStream(usePiCamera=True).start()
+#	vs = VideoStream(usePiCamera=True).start()
 	time.sleep(2.0)
 
 	print('[INFO] press `q` to quit the classification mode')
@@ -438,8 +372,6 @@ def prediction_making():
 			if score >= 0.7:
 				if classID == 1:
 					color = (0, 255, 0)
-				elif classID == 2:
-					color = (255, 0, 0)
 				cv2.putText(orig, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
 					0.5, color, 2)
 
@@ -464,92 +396,14 @@ def prediction_making():
 	while training:
 		training = False
 		print('Training Mode!')
-		supp = Toplevel()
-		Button(supp, text='Supplement Pictures', command=supplement).pack()
-		Button(supp, text='Train A New Model', command=model_training_main).pack()
-		Button(supp, text='Exit', command=supp.destroy).pack()
-		supp.mainloop()
+		picture_taking()
 		# disable the camera after classification or preview
-
-		# ans = input('Would you like to continue classifying video? (y/n)\n')
-		# if ans == 'y':
-		# 	prediction_making()
-		# else:
-		# 	break
-
-def image_classification():
-	def check_file_type(image):
-		exts = {'.jpg', '.png'}
-		file_valid = any(image.endswith(ext) for ext in exts) 
-		return file_valid 
-
-	path = filedialog.askdirectory(parent=p, initialdir=os.getcwd(),
-		title="Please select testset:")
-	files = os.listdir(os.path.join(path, 'testset'))
-	print(files)
-
-	print("[INFO] parsing class labels...")
-	labels = {}
-
-	label_txt = filedialog.askopenfilename(initialdir=os.getcwd(), title="Select Label File:",
-	filetypes=(("text files","*.txt"),("all files","*.*")))
-	print(label_txt)
-
-	for row in open(label_txt):
-		# unpack the row and update the labels dictionary
-		(classID, label) = row.strip().split(" ", maxsplit=1)
-		label = label.strip().split(",", maxsplit=1)[0]
-		labels[int(classID)] = label
-
-	model_tflite = filedialog.askopenfilename(initialdir=os.getcwd(),title="Select Model:",
-		filetypes=(("tensor flow lite files:","*.tflite"),("all files","*.*")))
-
-	print("[INFO] loading Coral model...")
-	model = ClassificationEngine(model_tflite)
-
-	output_csv_name = simpledialog.askstring("Image Classifying", "Output results' csv file name:", parent=p)
-
-	# iterate the files in the image folder
-	with open(output_csv_name, 'w') as f:
-		writer = csv.writer(f)
-		writer.writerow(['Index', 'Label', 'Score'])
-
-		for file in files:
-			if check_file_type(file) == False:
-				# ignore this file and continue
-				print('Invalid Extension')
-				continue
-
-			# file_dir -The filredir in local disk
-			file_dir = os.path.join(path, 'testset', file)
-
-			# load the input image
-			image = cv2.imread(file_dir)
-			orig = image.copy()
-
-			# prepare the image for classification by converting (1) it from BGR
-			# to RGB channel ordering and then (2) from a NumPy array to PIL
-			# image format
-			image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-			image = Image.fromarray(image)
-
-			# make predictions on the input image
-			print("[INFO] making predictions...")
-			# start = time.time()
-			results = model.classify_with_image(image, top_k=5)
-			# end = time.time()
-			# print("[INFO] classification took {:.4f} seconds...".format(
-			# 	end - start))
-
-			# loop over the results
-			for (i, (classID, score)) in enumerate(results):
-				# display the classification result to the terminal
-				# print("{}. {}: {:.2f}%".format(i + 1, labels[classID],
-				# 	score * 100))
-				if i == 0:
-					writer.writerow([i, labels[classID], score*100])
-
-		f.close()
+		model_training_main()
+		ans = input('Would you like to continue classifying video? (y/n)\n')
+		if ans == 'y':
+			prediction_making()
+		else:
+			break
 
 # create the parent window
 p = Tk() # p: parent
@@ -565,9 +419,7 @@ da_button = Button(p, text='Augment Data', width=25, command=data_augmentation).
 
 mt_button = Button(p, text='Train Model', width=25, command=model_training_main).pack()
 
-pm_button = Button(p, text='Classify Video', width=25, command=prediction_making).pack()
-
-ts_button = Button(p, text='Classify Image', width=25, command=image_classification).pack()
+pm_button = Button(p, text='Make Prediction', width=25, command=prediction_making).pack()
 
 exit_button = Button(p, text='Exit', width=25, command=p.destroy).pack()
 
