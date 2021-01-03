@@ -15,6 +15,12 @@ from google.cloud import storage
 from google.cloud import automl
 from google.cloud.storage import Blob
 
+from edgetpu.classification.engine import ClassificationEngine
+from imutils.video import VideoStream
+from PIL import Image
+import imutils
+import cv2
+
 def initialization():
 	global NameOfSts
 	global NumOfSts
@@ -101,10 +107,20 @@ def data_augmentation():
 	import Augmentor
 
 	def data_augmenting():
-		for x in range(NumOfSts):
+		NumOfAugSts = simpledialog.askinteger(
+			"Data Augmenting",
+			"Input the number of labels you want to augment:",
+			parent=da,
+			minvalue=1,
+			maxvalue=3
+			)
+		sts = ['1st', '2nd', '3rd']
+
+		for x in range(NumOfAugSts):
+			print("Augmenting the "+sts[x]+" status...\n")
 			NumOfSmp = simpledialog.askinteger("Data Augmenting",
 				"Input the number of samples:",
-				parent=da, minvalue=50, maxvalue=500)
+				parent=da, minvalue=10, maxvalue=500)
 			
 			SrcPath = filedialog.askdirectory(parent=da,
 				initialdir=os.getcwd(),
@@ -155,7 +171,7 @@ def data_augmentation():
 	var2 = IntVar()
 	Checkbutton(da, text='Skew & Tilt', variable=var2).pack()
 	var3 = IntVar()
-	Checkbutton(da, text='Mosaic', variable=var3).pack()
+	Checkbutton(da, text='Zoom in', variable=var3).pack()
 	var4 = IntVar()
 	Checkbutton(da, text='Brightness', variable=var4).pack()
 
@@ -164,7 +180,7 @@ def data_augmentation():
 
 	da.mainloop()
 
-def model_training_main():
+def classification_model_training():
 	def model_training_init(parent):
 		mt = parent
 		global display_name, model_name, model_filename, csv_name
@@ -192,10 +208,10 @@ def model_training_main():
 		remote_model_filename = 'edgetpu_model.tflite' #tflite: TensorFlow Lite
 		model_format = 'edgetpu_tflite'
 		train_budget = 12000 # budget/1000 equals 1 node hour
-		storage_client = storage.Client()
+		storage_client = storage.Client(project=project_id)
 		client = automl.AutoMlClient()
 		project_location = f"projects/{project_id}/locations/us-central1"
-		bucket = storage_client.bucket(bucket_name)
+		bucket = storage_client.get_bucket(bucket_name)
 		display_name=display_name
 		model_name=model_name
 		model_filename=model_filename
@@ -213,17 +229,20 @@ def model_training_main():
 		)
 
 		# Create a dataset with the dataset metadata in the region.
-		response = client.create_dataset(parent=project_location, dataset=dataset)
+		response = client.create_dataset(parent=project_location,
+			dataset=dataset)
 		created_dataset = response.result()
 		# Display the dataset information
 		print("Dataset name: {}".format(created_dataset.name))
 		print("Dataset id: {}".format(created_dataset.name.split("/")[-1]))
 		dataset_id = created_dataset.name.split("/")[-1]
 
-		#--------------Upload the images to google cloud bucket and create a *.csv file-------------
+		#--------------Upload the images to google cloud bucket and 
+		# create a *.csv file-------------
 		print("Uploading Images...")
 		status_list = NameOfSts
-		upload_image_excel(bucket, bucket_name, display_name, image_path, status_list, csv_name)
+		upload_image_excel(bucket, bucket_name, display_name,
+			image_path, status_list, csv_name)
 
 		#----------------------Import the images to created dataset---------------------------------
 		print("Importing Images...")
@@ -231,7 +250,7 @@ def model_training_main():
 		remote_csv_path = 'gs://{0}/{1}'.format(bucket_name, csv_name)
 		# Get the full path of the dataset.
 		dataset_full_id = client.dataset_path(
-		    project_id, "us-central1", dataset_id
+			project_id, "us-central1", dataset_id
 		)
 
 		# Get the multiple Google Cloud Storage URIs
@@ -241,7 +260,8 @@ def model_training_main():
 		input_config = automl.InputConfig(gcs_source=gcs_source)
 
 		# Import data from the input URI
-		response = client.import_data(name=dataset_full_id, input_config=input_config)
+		response = client.import_data(name=dataset_full_id,
+			input_config=input_config)
 
 		print("Data imported. {}".format(response.result()))
 
@@ -257,7 +277,8 @@ def model_training_main():
 		)
 
 		# Create a model with the model metadata in the region.
-		response = client.create_model(parent=project_location, model=model)
+		response = client.create_model(parent=project_location,
+			model=model)
 
 		print("Training operation name: {}".format(response.operation.name))
 		print("Training started...")
@@ -268,7 +289,8 @@ def model_training_main():
 		print("Model id: {}".format(created_model.name.split("/")[-1]))
 
 		#--------------------Listing Models--------------------------------
-		request = automl.ListModelsRequest(parent=project_location, filter="")
+		request = automl.ListModelsRequest(parent=project_location,
+			filter="")
 		response = client.list_models(request=request)
 
 		export_configuration = {
@@ -280,15 +302,17 @@ def model_training_main():
 			# check models in project and export new one
 			if model.display_name == model_name:
 				# export model to bucket
-				model_full_id = client.model_path(project_id, "us-central1", model.name.split("/")[-1])
-				response = client.export_model(name=model_full_id, output_config=export_configuration)
+				model_full_id = client.model_path(project_id,
+					"us-central1", model.name.split("/")[-1])
+				response = client.export_model(name=model_full_id,
+					output_config=export_configuration)
 
 		# get information on model storage location and download it to local directory "models"
 		export_metadata = response.metadata
 		export_directory = export_metadata.export_model_details.output_info.gcs_output_directory
 
-		client1 = storage.Client(project=project_id)
-		bucket1 = client1.get_bucket(bucket_name)
+		# client1 = storage.Client(project=project_id)
+		# bucket1 = client1.get_bucket(bucket_name)
 
 		model_dir_remote = export_directory + remote_model_filename
 		model_dir_remote = "/".join(model_dir_remote.split("/")[-4:])
@@ -296,11 +320,18 @@ def model_training_main():
 		print(model_dir_remote)
 		print(model_dir)
 
-		# wait for model to be exported
-		blob = Blob(model_dir_remote, bucket1)
+		def model_downloading():
+			blob = Blob(model_dir_remote, bucket)
 
-		with open(model_dir, "wb") as file_obj:
-			blob.download_to_file(file_obj)
+			with open(model_dir, "wb") as file_obj:
+				blob.download_to_file(file_obj)
+
+		model_downloading()
+		# # wait for model to be exported
+		# blob = Blob(model_dir_remote, bucket)
+
+		# with open(model_dir, "wb") as file_obj:
+		# 	blob.download_to_file(file_obj)
 
 		print("Process completed, new model is now accessible locally.")
 
@@ -316,6 +347,177 @@ def model_training_main():
 	exit_button = Button(mt, text='Exit', command=mt.destroy).pack()
 
 	mt.mainloop()
+
+def detection_model_training():
+	def model_training_init(parent):
+		od = parent
+		global display_name, model_name, model_filename, csv_name
+		display_name = simpledialog.askstring("Initializing", 
+			"Dataset Name:", parent=od)
+		model_name = simpledialog.askstring("Initializing", 
+			"Model Name on Google Cloud Storage:", parent=od)
+		model_filename = simpledialog.askstring("Initializing", 
+			"Model Name on Local Device:", parent=od)
+		csv_name = simpledialog.askstring("Initializing", 
+			"*.csv File Name:", parent=od)
+		model_filename += '.tflite'
+		csv_name += '.csv'
+
+	def dataset_selecting(parent):
+		od = parent
+		global image_path
+		image_path = filedialog.askdirectory(parent=od, 
+			initialdir=os.getcwd(),
+			title="Please select the dataset you want to train:")
+
+	def model_training(display_name, model_name, model_filename, csv_name):
+		from ImageUploading import upload_image_excel # self_defined
+		from dotenv import load_dotenv
+		load_dotenv()
+
+		# set up google cloud automl 
+		project_id = os.getenv("PROJECT_ID")
+		bucket_name = os.getenv("BUCKET_NAME")
+		remote_model_filename = 'edgetpu_model.tflite' #tflite: TensorFlow Lite
+		model_format = 'edgetpu_tflite'
+		train_budget = 12000 # budget/1000 equals 1 node hour
+		storage_client = storage.Client(project=project_id)
+		client = automl.AutoMlClient()
+		project_location = f"projects/{project_id}/locations/us-central1"
+		bucket = storage_client.get_bucket(bucket_name)
+		display_name=display_name
+		model_name=model_name
+		model_filename=model_filename
+		csv_name=csv_name
+
+		#----------------------Create an empty dataset----------------------
+
+		print('Dataset Creation...')
+		metadata = automl.ImageObjectDetectionDatasetMetadata()
+		dataset = automl.Dataset(
+			display_name=display_name,
+			image_object_detection_dataset_metadata=metadata
+		)
+
+		# Create a dataset with the dataset metadata in the region.
+		response = client.create_dataset(parent=project_location,
+			dataset=dataset)
+		created_dataset = response.result()
+		# Display the dataset information
+		print("Dataset name: {}".format(created_dataset.name))
+		print("Dataset id: {}".format(created_dataset.name.split("/")[-1]))
+		dataset_id = created_dataset.name.split("/")[-1]
+
+		#--------------Upload the images to google cloud bucket and 
+		# create a *.csv file-------------
+		print("Uploading Images...")
+		status_list = NameOfSts
+		upload_image_excel(bucket, bucket_name, display_name,
+			image_path, status_list, csv_name)
+
+		#----------------------Import the images to created dataset---------------------------------
+		print("Importing Images...")
+		# Read the *.csv file on Google Cloud
+		remote_csv_path = 'gs://{0}/{1}'.format(bucket_name, csv_name)
+		# Get the full path of the dataset.
+		dataset_full_id = client.dataset_path(
+			project_id, "us-central1", dataset_id
+		)
+
+		# Get the multiple Google Cloud Storage URIs
+		# A Uniform Resource Identifier (URI) is a string of characters that unambiguously identifies a particular resource.
+		input_uris = remote_csv_path.split(",")
+		gcs_source = automl.GcsSource(input_uris=input_uris)
+		input_config = automl.InputConfig(gcs_source=gcs_source)
+
+		# Import data from the input URI
+		response = client.import_data(name=dataset_full_id,
+			input_config=input_config)
+
+		print("Data imported. {}".format(response.result()))
+
+		#-----------------Create and Train the Model-----------------------------------
+		model_metadata = automl.ImageObjectDetectionModelMetadata(
+			train_budget_milli_node_hours=train_budget,
+			model_type="mobile-high-accuracy-1"
+		)
+		model = automl.Model(
+			display_name=model_name,
+			dataset_id=dataset_id,
+			image_object_detection_model_metadata = model_metadata,
+		)
+
+		# Create a model with the model metadata in the region.
+		response = client.create_model(parent=project_location,
+			model=model)
+
+		print("Training operation name: {}".format(response.operation.name))
+		print("Training started...")
+
+		created_model = response.result()
+		# Display the dataset information
+		print("Model name: {}".format(created_model.name))
+		print("Model id: {}".format(created_model.name.split("/")[-1]))
+
+		#--------------------Listing Models--------------------------------
+		request = automl.ListModelsRequest(parent=project_location,
+			filter="")
+		response = client.list_models(request=request)
+
+		export_configuration = {
+			'model_format': model_format,
+			'gcs_destination':{'output_uri_prefix': 'gs://{}/'.format(bucket_name)}
+		}
+
+		for model in response:
+			# check models in project and export new one
+			if model.display_name == model_name:
+				# export model to bucket
+				model_full_id = client.model_path(project_id,
+					"us-central1", model.name.split("/")[-1])
+				response = client.export_model(name=model_full_id,
+					output_config=export_configuration)
+
+		# get information on model storage location and download it to local directory "models"
+		export_metadata = response.metadata
+		export_directory = export_metadata.export_model_details.output_info.gcs_output_directory
+
+		# client1 = storage.Client(project=project_id)
+		# bucket1 = client1.get_bucket(bucket_name)
+
+		model_dir_remote = export_directory + remote_model_filename
+		model_dir_remote = "/".join(model_dir_remote.split("/")[-4:])
+		model_dir = os.path.join("models", model_filename) 
+		print(model_dir_remote)
+		print(model_dir)
+
+		def model_downloading():
+			blob = Blob(model_dir_remote, bucket)
+
+			with open(model_dir, "wb") as file_obj:
+				blob.download_to_file(file_obj)
+
+		model_downloading()
+		# # wait for model to be exported
+		# blob = Blob(model_dir_remote, bucket)
+
+		# with open(model_dir, "wb") as file_obj:
+		# 	blob.download_to_file(file_obj)
+
+		print("Process completed, new model is now accessible locally.")
+
+	# set up authentication credentials
+	print("Initializing...")
+
+	od = Toplevel()
+	od.title("Model Training...")
+
+	para_init_button = Button(od, text='Initializing Parameters...', command=lambda: model_training_init(od)).pack()
+	select_button = Button(od, text='Select Dataset...', command=lambda: dataset_selecting(od)).pack()
+	train_button = Button(od, text='Train', command=lambda: model_training(display_name, model_name, model_filename, csv_name)).pack()
+	exit_button = Button(od, text='Exit', command=od.destroy).pack()
+
+	od.mainloop()
 
 def supplement():
 	camera = PiCamera()
@@ -372,11 +574,6 @@ def supplement():
 	sp.mainloop()
 
 def prediction_making():
-	from edgetpu.classification.engine import ClassificationEngine
-	from imutils.video import VideoStream
-	from PIL import Image
-	import imutils
-	import cv2
 
 	print("[INFO] parsing class labels...")
 	labels = {}
@@ -465,9 +662,12 @@ def prediction_making():
 		training = False
 		print('Training Mode!')
 		supp = Toplevel()
-		Button(supp, text='Supplement Pictures', command=supplement).pack()
-		Button(supp, text='Train A New Model', command=model_training_main).pack()
-		Button(supp, text='Exit', command=supp.destroy).pack()
+		Button(supp, text='Supplement Pictures', 
+			command=supplement).pack()
+		Button(supp, text='Train A New Model', 
+			command=classification_model_training).pack()
+		Button(supp, text='Exit', 
+			command=supp.destroy).pack()
 		supp.mainloop()
 		# disable the camera after classification or preview
 
@@ -485,7 +685,7 @@ def image_classification():
 
 	path = filedialog.askdirectory(parent=p, initialdir=os.getcwd(),
 		title="Please select testset:")
-	files = os.listdir(os.path.join(path, 'testset'))
+	files = os.listdir(path)
 	print(files)
 
 	print("[INFO] parsing class labels...")
@@ -507,7 +707,10 @@ def image_classification():
 	print("[INFO] loading Coral model...")
 	model = ClassificationEngine(model_tflite)
 
-	output_csv_name = simpledialog.askstring("Image Classifying", "Output results' csv file name:", parent=p)
+	output_csv_name = simpledialog.askstring("Image Classifying",
+		"Output results' csv file name:", parent=p)
+	output_csv_name += '.csv'
+	print("[INFO] making predictions...")
 
 	# iterate the files in the image folder
 	with open(output_csv_name, 'w') as f:
@@ -521,7 +724,7 @@ def image_classification():
 				continue
 
 			# file_dir -The filredir in local disk
-			file_dir = os.path.join(path, 'testset', file)
+			file_dir = os.path.join(path, file)
 
 			# load the input image
 			image = cv2.imread(file_dir)
@@ -534,7 +737,6 @@ def image_classification():
 			image = Image.fromarray(image)
 
 			# make predictions on the input image
-			print("[INFO] making predictions...")
 			# start = time.time()
 			results = model.classify_with_image(image, top_k=5)
 			# end = time.time()
@@ -546,10 +748,11 @@ def image_classification():
 				# display the classification result to the terminal
 				# print("{}. {}: {:.2f}%".format(i + 1, labels[classID],
 				# 	score * 100))
-				if i == 0:
+				if i==0 and score>=0.7:
 					writer.writerow([i, labels[classID], score*100])
 
 		f.close()
+	print('Finished!')
 
 # create the parent window
 p = Tk() # p: parent
@@ -563,7 +766,11 @@ dsi_button = Button(p, text='Import Dataset', width=25, command=dataset_importin
 
 da_button = Button(p, text='Augment Data', width=25, command=data_augmentation).pack()
 
-mt_button = Button(p, text='Train Model', width=25, command=model_training_main).pack()
+mt_button = Button(p, text='Train Classification Model', 
+	width=25, command=classification_model_training).pack()
+
+od_button =Button(p, text='Train Object Detection Model',
+	width=25, command=detection_model_training).pack()
 
 pm_button = Button(p, text='Classify Video', width=25, command=prediction_making).pack()
 
